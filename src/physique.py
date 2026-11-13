@@ -1,5 +1,4 @@
-from src.projectile import Projectile
-from src.astre import AstreFixe, G
+from src.astre import AstreFixe, Projectile, G
 from src.exceptions import HorsSystemeError, TempsMaximumAtteinte
 
 import numpy as np

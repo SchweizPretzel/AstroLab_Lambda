@@ -1,6 +1,5 @@
-from src.astre import AstreFixe
+from src.astre import AstreFixe, Projectile
 from src.chargeur_csv import charger_csv
-from src.projectile import Projectile
 from src.physique import calculer_trajectoire
 from src.exceptions import *
 

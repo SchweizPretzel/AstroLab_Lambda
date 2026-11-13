@@ -17,9 +17,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
-from src.astre import Astre, AstreFixe
+from src.astre import Astre, AstreFixe, Projectile
 from src.chargeur_csv import couleur_aleatoire, sauvegarder, os
-from src.projectile import Projectile
 from src.simulation import Simulation
 from src.exceptions import DebutHistorique, FinHistorique
 

@@ -4,8 +4,7 @@ import pandas as pd
 import random
 from matplotlib.colors import is_color_like, to_hex
 
-from src.astre import AstreFixe, en_booleen  # Levy : pour créer les objets dans charger_csv
-from src.projectile import Projectile
+from src.astre import AstreFixe, Projectile, en_booleen  # Levy : pour créer les objets dans charger_csv
 
 COLONNES_communes = ["nom", "masse", "couleur", "taille", "rayon", "actif"]
 COLONNES_fixes = ["distance", "periode", "phase", "parent"]
