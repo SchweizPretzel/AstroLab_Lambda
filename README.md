@@ -107,3 +107,5 @@ $t_2 = \frac{-2(\Delta \vec{r} \cdot \Delta \vec{v}) + \sqrt{D}}{2\Delta \vec{v}
 Si $\left(t_1 \in [0,1]\right) \vee \left(t_2 \in [0,1]\right)$, alors il y a une collision.
 
 $\blacksquare$
+
+À noter que la preuve est valide en 2D également, il faut simplement omettre la composante en z pour chaque vecteur.
