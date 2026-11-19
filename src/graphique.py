@@ -17,6 +17,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
+from astre import Vecteur2
 from src.astre import Astre, AstreFixe, Projectile
 from src.chargeur_csv import couleur_aleatoire, sauvegarder, os
 from src.simulation import Simulation
@@ -128,7 +129,7 @@ class GestionnaireObjets(ctk.CTkScrollableFrame):
 
             # np.linalg.norm : longueur du vecteur (x, y), donc distance au centre
             # https://numpy.org/doc/stable/reference/generated/numpy.linalg.norm.html
-            distance = objet.distance if est_astre else np.linalg.norm(objet.pos0)
+            distance = objet.distance if est_astre else objet.pos0.norme()
             valeurs = (objet.nom, "astre" if est_astre else "projectile", f"{objet.masse:.3g}", f"{distance:.2f}")
             for colonne, valeur in enumerate(valeurs, start=1):
                 texte(self, valeur).grid(row=ligne, column=colonne, padx=6, sticky="w")
@@ -194,7 +195,7 @@ class VueGraphique(ctk.CTkFrame):
         actifs = [objet for objet in list(astres) + list(projectiles) if objet.actif]
 
         # Vue carrée qui contient l'astre le plus loin (+10 %)
-        limite = 1.1 * max([np.linalg.norm(objet.position(t)) for objet in actifs if isinstance(objet, AstreFixe)] + [1])
+        limite = 1.1 * max([objet.position(t).norme() for objet in actifs if isinstance(objet, AstreFixe)] + [1])
 
         # Axes.set : https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.set.html
         ax.set(xlim=(-limite, limite), ylim=(-limite, limite), aspect="equal", facecolor=FOND,
@@ -219,7 +220,7 @@ class VueGraphique(ctk.CTkFrame):
             taille = max(8, 20 * np.sqrt(objet.taille)) if objet in astres else 25
 
             if objet in astres:
-                x, y = objet.position(t)
+                x, y = objet.position(t).unpack()
 
                 if objet.distance > 0:
                     # Circle + add_patch : cercle de l'orbite autour du Soleil ou du parent
@@ -236,11 +237,11 @@ class VueGraphique(ctk.CTkFrame):
 
             elif objet in projectiles:
                 try:
-                    x, y = objet.position(t)
+                    x, y = objet.position(t).unpack()
                     ax.scatter(x, y, taille, objet.couleur, zorder=3)
                     ax.annotate(objet.nom, (x, y), xytext=(4, 2), textcoords="offset points", color="white", fontsize=7)
                 except DebutHistorique:
-                    x, y = objet.pos0
+                    x, y = objet.pos0.unpack()
                     ax.scatter(x, y, taille, objet.couleur, zorder=3, marker="*")
                     ax.annotate(objet.nom, (x, y), xytext=(4, 2), textcoords="offset points", color="white", fontsize=7)
                 except FinHistorique:
@@ -491,7 +492,7 @@ class FenetreSimulateur(ctk.CTk):
             self.vue.dessiner(astres, projectiles, t)
             infos = {"État": projectiles[0].etat, "Masse (MT)": f"{projectiles[0].masse:g}"} if projectiles else None
             self.details.afficher([projectile.nom for projectile in projectiles], infos)
-            self.barre_controle.afficher_temps(t)
+            self.barre_controle.afficher_temps(int(t))
 
             # Cache
             self.cache["astres"] = astres
@@ -550,7 +551,7 @@ class FenetreSimulateur(ctk.CTk):
             return f"Le nom « {nom} » est déjà utilisé."
         couleur = couleur_aleatoire({objet.couleur for objet in objets})  # différente des couleurs déjà prises
         try:
-            projectile = Projectile(nom, n["masse"], couleur, 0.5, n["rayon"], (n["x0"], n["y0"]), (n["vx0"], n["vy0"]),
+            projectile = Projectile(nom, n["masse"], couleur, 0.5, n["rayon"], Vecteur2(n["x0"], n["y0"]), Vecteur2(n["vx0"], n["vy0"]),
                                     self.barre_controle.t, n["duree_vie"])
         except ValueError as erreur:  # masse ou rayon négatifs
             return str(erreur)

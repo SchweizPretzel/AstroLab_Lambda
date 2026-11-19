@@ -1,4 +1,7 @@
-from src.astre import AstreFixe, Projectile, G
+import math
+
+from astre import Astre
+from src.astre import AstreFixe, Projectile, Vecteur2, G
 from src.exceptions import HorsSystemeError, TempsMaximumAtteinte
 
 import numpy as np
@@ -47,20 +50,18 @@ def calculer_trajectoire(projectile: Projectile, liste_astre: list[AstreFixe], d
     pos = projectile.pos0
     vit = projectile.vit0
     t = projectile.temps_apparition  # en jour : les astres partent de leur position au lancement
-    nombre_diteration_max = int(temps_maximum / dt)
+    nombre_iteration_max = int(temps_maximum / dt)
 
-    for i in range(nombre_diteration_max):
-        # Enregistre les coordonnées des astres ici, ce qui nous évite de les chercher constamment.
-        astres_positions = [(astre, astre.position(t)) for astre in liste_astre]
+    for i in range(nombre_iteration_max):
 
-        new_pos, new_vit = prochaine_pos_vit(pos, astres_positions, dt, vit)
-        contacte, new_pos = est_en_contacte(pos, new_pos, projectile, astres_positions)
+        new_pos, new_vit = prochaine_pos_vit(pos, liste_astre, dt, vit, t)
+        contacte, new_pos = est_en_contacte(pos, new_pos, projectile, liste_astre, t, dt)
 
         if contacte is not None: # s'il y a un contacte
             projectile.ajouter_etat(new_pos, new_vit)  # ajoute la dernière position du projectile (sur l’astre)
             return contacte
 
-        if new_pos[0] ** 2 + new_pos[1] ** 2 > distance_max**2:
+        if new_pos.norme2() > distance_max**2:
             raise HorsSystemeError("Le projectile est hors du système.")
 
         # Enregistre seulement les positions une fois par jour
@@ -73,58 +74,60 @@ def calculer_trajectoire(projectile: Projectile, liste_astre: list[AstreFixe], d
     raise TempsMaximumAtteinte("Le nombre de temps maximum a été atteint.")
 
 
-def acceleration( pos: list[float], astres_positions: list[tuple[AstreFixe, tuple[float, float]]]) -> np.ndarray:
-    """_Calcule l'accélération (en UA/j²) que les astres actifs exercent sur le projectile a la position _pos__
+def acceleration(pos: Vecteur2, astres: list[AstreFixe], t: float) -> Vecteur2:
+    """Calcule l'accélération (en UA/j²) que les astres actifs exercent sur le projectile a la position `pos`
 
     Args:
-        pos (list[float]): _la position x et y du projectile (en UA)_
-        astres_positions (list[tuple[AstreFixe, tuple[float,float]]]): _liste qui contient toutes les positions des astres et les astres fixes du système_
+        t (float): le temps auquel on calcule l'acceleration
+        pos (Vecteur2): la position du projectile (en UA)
+        astres (list[AstreFixe]): liste qui contient tous les astres fixes
 
     Returns:
-        np.ndarray: _accélération x et y du projectile (en UA/j²)_
-
-    Levy : fonction écrite pour regrouper les deux boucles d'accélération de prochaine_pos_vit.
+        Vecteur2: accélération du projectile (en UA/j²)
     """
     # Un astre inactif n'attire pas
-    actifs = [(astre.masse, pos_astre) for astre, pos_astre in astres_positions if astre.actif]
+    actifs = [a for a in astres if a.actif]
     if not actifs:
-        return np.zeros(2)
+        return Vecteur2.nul()
+
     # Tous les astres d'un coup avec numpy (une boucle Python par astre était le plus lent du programme)
-    masses = np.array([masse for masse, _ in actifs])
-    vecteurs_astre_projectile = np.array([pos_astre for _, pos_astre in actifs]) - pos
+    masses = np.array([a.masse for a in actifs])
+    vecteurs_astre_projectile = np.array([(a.position(t) - pos).unpack() for a in actifs])
     distances2 = (vecteurs_astre_projectile ** 2).sum(axis=1)
-    masses[distances2 < 1e-12] = 0  # Pour eviter les divisions par 0 : un astre au même point n'attire pas
+    masses[distances2 < 1e-12] = 0  # Pour éviter les divisions par 0 : un astre au même point n'attire pas
     distances2 = np.maximum(distances2, 1e-12)
 
     # Fg = Gm1m2/d**2 et a = F/m1, donc a = G * m2/d**2 dans la direction vecteur / d, soit G * m2 * vecteur / d**3.
     # @ (produit matriciel) additionne les contributions de tous les astres : https://numpy.org/doc/stable/reference/generated/numpy.matmul.html
-    return (G * masses / distances2 ** 1.5) @ vecteurs_astre_projectile
+    somme_fg = (G * masses / distances2 ** 1.5) @ vecteurs_astre_projectile
+    return Vecteur2(somme_fg[0], somme_fg[1])
 
 
-def prochaine_pos_vit( pos: list[float], astres_positions: list[tuple[AstreFixe, tuple[float, float]]], dt: float, v: list[float] ) -> tuple[tuple]:
-    """_Calcule la prochaine vitesse et la prochaine position du projectile en utilisant
-    l’algorithme de Verlet pour sa conservation d’énergie à long terme. (Pour plus d’information, consulte la vidéo suivante : https://www.youtube.com/watch?v=ii-N61PeeQU&t=747s)
+def prochaine_pos_vit(pos: Vecteur2, astres: list[AstreFixe], dt: float, v: Vecteur2, t: float) -> tuple[Vecteur2, Vecteur2]:
+    """Calcule la prochaine vitesse et la prochaine position du projectile en utilisant
+    l’algorithme de Verlet pour la conservation d’énergie à long terme.
+    (Pour plus d’information, consulter la vidéo suivante : https://www.youtube.com/watch?v=ii-N61PeeQU&t=747s)
 
     Args:
-        pos (list[float]): _la position x et y du projectile à ce moment (en UA)_
-        astres_positions (list[tuple[AstreFixe, tuple[float,float]]]): _liste qui contient toutes les positions des astres et les astres fixes du systeme_
-        dt (float): _pas de temps (en j)_
-        v (list[float]): _vitesse du projectile (en UA/j)_
+        pos (Vecteur2): la position x et y du projectile à ce moment (en UA)
+        astres (list[AstreFixe]): liste qui contient toutes les positions des astres et les astres fixes du systeme
+        dt (float): pas de temps (en j)
+        v (Vecteur2): vitesse du projectile (en UA/j)
 
     Returns:
-        _tuple_ (new_pos, new_vit) :
-            _new_pos_ -> _nouvelle position x et y du projectile (en UA)_
+        tuple (new_pos, new_vit) :
+            new_pos -> nouvelle position x et y du projectile (en UA)
 
-            _new_vit_ -> _nouvelle vitesse x et y du projectile (en UA/j)_
+            new_vit -> nouvelle vitesse x et y du projectile (en UA/j)
     """
     # 1- Trouvons a(t) -> a
-    a = acceleration(pos, astres_positions)
+    a = acceleration(pos, astres, t)
 
     # 2- Trouvons la position au temps t + dt -> new pos
     new_pos = pos + v * dt + 0.5 * a * dt**2
 
     # 3- Trouvons a(t + dt) -> new_a
-    new_a = acceleration(new_pos, astres_positions)
+    new_a = acceleration(new_pos, astres, t + dt)
 
     # 4- Trouvons v(t+dt) -> new_v
     new_v = v + 1 / 2 * (new_a + a) * dt
@@ -132,14 +135,17 @@ def prochaine_pos_vit( pos: list[float], astres_positions: list[tuple[AstreFixe,
     return new_pos, new_v
 
 
-def est_en_contacte( pos: list[float], new_pos: list[float], p: Projectile, astres_positions: list[tuple[AstreFixe, tuple[float, float]]]) -> AstreFixe:
+def est_en_contacte(pos: Vecteur2, new_pos: Vecteur2, p: Projectile, astres: list[AstreFixe],
+                    t: float, dt: float) -> tuple[AstreFixe | None, Vecteur2]:
     """_Vérifie s'il est en contact ou non en calculant si la trajectoire des deux points a des points avec l’astre le plus proche_
 
     Args:
-        pos (list[float]): _Position x et y du projectile au moment précédant (en UA)_
-        new_pos (list[float]): _Nouvelle position x et y du projectile maintenant (en UA)_
+        dt (float): différentielle du temps
+        t (float): temps
+        pos (Vecteur2): _Position x et y du projectile au moment précédant (en UA)_
+        new_pos (Vecteur2): _Nouvelle position x et y du projectile maintenant (en UA)_
         p (Projectile): _Projectile lancé_
-        astres_positions (list[tuple[AstreFixe, tuple[float,float]]]): _Liste qui contient toutes les positions des astres et les astres fixes du système_
+        astres (list[AstreFixe]): _Liste qui contient touts les astres fixes du système_
 
     Returns:
         AstreFixe: _l'astre touché et la position où elle a toucher OU None s'il ne touche rien_
@@ -149,66 +155,46 @@ def est_en_contacte( pos: list[float], new_pos: list[float], p: Projectile, astr
     astre_proche = None
     astre_proche_position = None
     distance_min = float("inf")
-    for astre_position in astres_positions:
-        pos_astre = astre_position[1]
-        dx, dy = pos_astre - new_pos
-        d2 = dx * dx + dy * dy
+    for a in astres:
+        pos_astre = a.position(t)
+        d2 = (pos_astre - new_pos).norme2()
 
         if d2 < distance_min:
             distance_min = d2
-            astre_proche = astre_position[0]
+            astre_proche = a
             astre_proche_position = pos_astre
+
+    if astre_proche is None:
+        return None, new_pos
+    astre_proche_position: Vecteur2 # Redéclare pour que PyCharm ferme sa gueule
 
     rayon_max = astre_proche.rayon + p.rayon
 
-    if abs(new_pos[0] - pos[0]) < 1e-12:  # si division par 0
+    if abs(new_pos.x - pos.x) < 1e-12:  # éviter une division par zéro
         return None, new_pos
 
-    # 1- Trouvons la fonction f(x) = ax + b qui relit _pos_ et _new_pos_
-    a = (new_pos[1] - pos[1]) / (new_pos[0] - pos[0])
-    b = pos[1] - a * pos[0]
+    # Détection des collisions par méthode vectorielle
+    v_proj = 1/dt * (new_pos - pos)
 
-    # 2- Trouvons l'équation du cercle pour l’astre                      -> (x - astre_position[0])**2 + (y - astre_position[1] )**2 = r**2
-    # 3- Ensuite, nous allons remplacer le y dans liquation
-    # du cercle pour la fct f(x)                                        -> (x - astre_position[0])**2 + (ax + b - astre_position[1] )**2 = r**2
-    # 4- avec des simplifications, nous avons                           -> (1+a**2)*x**2 + (2*a*b - 2*astre_position[0] - 2*a*astre_position[1])*x + (astre_position[0]**2 + astre_position[1]**2 + b**2 - 2*b*astre_position[1] - rayon_max**2) = 0
-    A = 1 + a**2
-    B = 2 * a * b - 2 * astre_proche_position[0] - 2 * a * astre_proche_position[1]
-    C = (
-        astre_proche_position[0] ** 2
-        + astre_proche_position[1] ** 2
-        + b**2
-        - 2 * b * astre_proche_position[1]
-        - rayon_max**2
-    )
+    delta_r = pos - astre_proche_position
+    delta_v = v_proj - astre_proche.vitesse(t)
 
-    # 5- Par la formule du discriminant                                 -> discriminant = B**2 - 4AC
-    discriminant = (B) ** 2 - 4 * (A) * (C)
+    A = delta_v.norme2()
+    B = delta_r.dotprod(delta_v)
+    C = delta_r.norme2() - rayon_max * rayon_max
 
-    # Les tangences produisent parfois de faux positifs
-    # à cause des trajectoires quasi verticales.
-    if discriminant <= 0:
+
+    discriminant = B * B - 4 * A * C
+
+    if discriminant < 0:
         return None, new_pos
 
-    # 6- par la formule quadratique                                     ->  (x = (-B +_ sqrt(discriminant)) / (2*A))
-    x1, x2 = float((-B + np.sqrt(discriminant)) / (2 * A)), float((-B - np.sqrt(discriminant)) / (2 * A))
+    t1 = (-B - math.sqrt(discriminant)) / (2 * A)
+    t2 = (-B + math.sqrt(discriminant)) / (2 * A)
 
-    # 7- par l'équation f(x)                                             -> (f(x) = ax + b)
-    y1, y2 = float(a * x1 + b), float(a * x2 + b)
+    if 0 < t1 < 1:
+        return astre_proche, astre_proche_position
 
-    # 8- Calcule le rectangle englobant du segment [pos, new_pos].
-    # Une intersection avec le cercle n'est valide que si elle
-    # se trouve à l'intérieur de ces bornes.
-    xmax, xmin = max(pos[0], new_pos[0]), min(pos[0], new_pos[0])
-    ymax, ymin = max(pos[1], new_pos[1]), min(pos[1], new_pos[1])
-
-    # 9- regarde si le point passant a f(x) et liquation du cercle est entre les deux positions _pos_ et _new_pos_
-    condition1 = (max(xmin, min(x1, xmax)) == x1 and max(ymin, min(y1, ymax)) == y1)  # -> si xmin <= x1 <= xmax et ymin <= y1 <=ymax
-    condition2 = (max(xmin, min(x2, xmax)) == x2 and max(ymin, min(y2, ymax)) == y2)  # -> si xmin <= x2 <= xmax et ymin <= y2 <=ymax
-
-    if condition1:
-        return astre_proche, (x1, y1)
-
-    elif condition2:
-        return astre_proche, (x2, y2)
+    elif 0 < t2 < 1:
+        return astre_proche, astre_proche_position
     return None, new_pos

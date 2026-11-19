@@ -4,7 +4,7 @@ import pandas as pd
 import random
 from matplotlib.colors import is_color_like, to_hex
 
-from src.astre import AstreFixe, Projectile, en_booleen  # Levy : pour créer les objets dans charger_csv
+from src.astre import AstreFixe, Projectile, en_booleen, Vecteur2  # Levy : pour créer les objets dans charger_csv
 
 COLONNES_communes = ["nom", "masse", "couleur", "taille", "rayon", "actif"]
 COLONNES_fixes = ["distance", "periode", "phase", "parent"]
@@ -132,10 +132,10 @@ def charger_csv(fichier):
                 couleur=str(row["couleur"]).strip(),
                 taille=row["taille"],
                 rayon=row["rayon"],
-                pos0=(row["x0"], row["y0"]),
-                vit0=(row["vx0"], row["vy0"]),
-                temps_apparition=float(row["temps_apparition"]),
-                duree_vie=float(row["duree_vie"]),
+                pos0=Vecteur2(row["x0"], row["y0"]),
+                vit0=Vecteur2(row["vx0"], row["vy0"]),
+                temps_apparition=int(row["temps_apparition"]),
+                duree_vie=int(row["duree_vie"]),
                 actif=en_booleen(row["actif"])
             ))
 

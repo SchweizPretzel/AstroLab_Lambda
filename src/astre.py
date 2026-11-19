@@ -8,6 +8,7 @@ Documentation officielle :
 """
 from abc import ABC, abstractmethod
 
+import math
 import numpy as np
 
 from src.exceptions import DebutHistorique, FinHistorique
@@ -47,20 +48,20 @@ def en_booleen(valeur) -> bool:
 
 
 class Astre(ABC):
-    
-    #Classe abstraite commune aux astres fixes et aux projectiles.
     """
-    Attributs :
-        nom : nom unique de l'objet.
-        masse : masse en masses terrestres (Terre = 1), comme dans systeme_solaire.csv.
-        couleur : couleur d'affichage dans le graphique matplotlib (ex. "orange" ou "#FDB813").
-        taille : taille d'affichage (rayon relatif à celui de la Terre dans le CSV).
-        rayon : rayon de collision en UA.
-        actif : un objet inactif n'attire pas et n'est pas simulé.
+    Class abstraite pour AstreFixe et Projectile
     """
-
-    #Constructeur de la classe Astre
     def __init__(self, nom: str, masse: float, couleur: str, taille: float, rayon: float, actif: bool = True):
+        """
+
+        Args:
+            nom (str): Le nom de l'astre
+            masse (float): La masse de l'astre, en MT.
+            couleur (str): La couleur d'affichage de l'astre. Doit être lisible par matplotlib.
+            taille (float): La taille d'affichage de l'astre.
+            rayon (float): Le rayon de l'astre, en UA.
+            actif (bool): Si l'astre devrait être simulé ou affiché.
+        """
         self.nom = nom
         self.couleur = couleur
         self.actif = en_booleen(actif)
@@ -75,7 +76,7 @@ class Astre(ABC):
             raise ValueError(f"Astre « {nom} » : masse et rayon doivent être positifs, taille strictement positive")
 
     @abstractmethod
-    def position(self, t: float) -> np.ndarray:
+    def position(self, t: float) -> Vecteur2:
         #Renvoie la position (x, y) en UA au temps t (jours), tableau numpy de forme (2,).
         pass
 
@@ -143,14 +144,28 @@ class AstreFixe(Astre):
             return 2 * np.pi * t / self.periode + phase
         return phase
 
-    def position(self, t: float) -> np.ndarray:
-        #Position r(t) = centre + d * (cos(theta), sin(theta)), le centre étant (0, 0) ou le parent.
+    def position(self, t: float) -> Vecteur2:
+        # Position r(t) = centre + d * (cos(theta), sin(theta)), le centre étant (0, 0) ou le parent.
         theta = self._angle(t)
-        centre = np.zeros(2) if self.parent is None else self.parent.position(t)
-        #np.array crée le vecteur [x, y] ; np.cos et np.sin prennent un angle en radians
-        #https://numpy.org/doc/stable/reference/generated/numpy.array.html
-        #https://numpy.org/doc/stable/reference/generated/numpy.cos.html
-        return centre + self.distance * np.array([np.cos(theta), np.sin(theta)])
+        if self.parent is None:
+            centre = Vecteur2.nul()
+        else:
+            centre = self.parent.position(t)
+
+        return centre + Vecteur2.v_polaire(self.distance, theta)
+
+    def vitesse(self, t: float) -> Vecteur2:
+        theta = self._angle(t)
+        if self.parent is None:
+            v_parent = Vecteur2.nul()
+        else:
+            v_parent = self.parent.vitesse()
+
+        if self.periode > 0:
+            return v_parent + Vecteur2.v_polaire(2 * np.pi * self.distance, theta)
+        else:
+            return Vecteur2.nul()
+
 
     @classmethod
     def depuis_ligne(cls, ligne):
@@ -189,44 +204,35 @@ class AstreFixe(Astre):
 
 
 class Projectile(Astre):
-    def __init__(self, nom, masse, couleur, taille, rayon, pos0,
-                 vit0, temps_apparition, duree_vie, actif=True):
-        """_summary_
+    def __init__(self, nom: str, masse: float, couleur: str, taille: float, rayon: float, pos0: Vecteur2,
+                 vit0: Vecteur2, temps_apparition: int, duree_vie: int, actif=True):
+        """Créé un nouveau projectile qui peut être simulé.
 
         Args:
-            nom (_type_): _description_
-            masse (_type_): _description_
-            couleur (_type_): _description_
-            taille (_type_): _description_
-            rayon (_type_): _description_
-            pos0 (_type_): _description_
-            vit0 (_type_): _description_
-            temps_apparition (_type_): _description_
-            duree_vie (_type_): _description_
-            actif (bool, optional): _description_. Defaults to True.
+            nom (str): Le nom du projectile.
+            masse (float): La masse du projectile, en MT.
+            couleur (str): La couleur d'affichage du projectile. Doit être lisible par matplotlib.
+            taille (float): La taille d'affichage du projectile.
+            rayon (float): Le rayon du projectile, en UA.
+            pos0 (Vecteur2): Le vecteur de position initiale du projectile, en UA.
+            vit0 (Vecteur2): Le vecteur de vitesse initiale du projectile, en UA/jour
+            temps_apparition (int): La valeur de temps où le projectile apparaît.
+            duree_vie (int): La durée de vie du projectile.
+            actif (bool): Si l'astre devrait être simulé ou affiché.
         """
 
         super().__init__(nom, masse, couleur, taille, rayon, actif)
-        self.pos0 = np.array(pos0, dtype=float)  # Position initiale du projectile, liste de coordonnées [x, y]
-        self.vit0 = np.array(vit0, dtype=float)  # Vitesse initiale du projectile, liste de coordonnées [vx, vy]
+        self.pos0 = pos0  # Position initiale du projectile, liste de coordonnées [x, y]
+        self.vit0 = vit0  # Vitesse initiale du projectile, liste de coordonnées [vx, vy]
         self.temps_apparition = temps_apparition  # Temps d'apparition du projectile : question a poser...
-        self.duree_vie = duree_vie  # Durée de vie du projectile: question a poser...
+        self.duree_vie = duree_vie  # Durée de vie du projectile: question à poser...
 
-        self.historique = np.array([[*self.pos0,
-                                     *self.vit0]])  # Liste pour stocker l'historique des positions du projectile : unpacking de pos0 et vit0 pour créer un tableau 2D avec les coordonnées et vitesses initiales par rappre a un N
-        self.etat = "actif"  # État du projectile : peut être actif ou inactif, mais obligatoirement actifs sa création, question a poser...: Que faire si on réinitialise mais que il avait été désactivé par le gestionnaire d'objets ?
-        self.cible = None  # Cible du projectile?: question a poser...
+        self.historique = np.array([[*(self.pos0.unpack()), *(self.vit0.unpack())]])
+        self.etat = "actif"
+        self.cible = None
 
     def reinitialiser(self):
-        """
-         hypothèses: lors de la réinitialisation on recommence la simulation depuis
-         le début, donc je vais supprimer l'historique, remettre son état à l'état de base
-         et la cible (je sais toujours pas le ça à quoi) mais on va la réinitialiser
-         parce qu'elle peut changer, les autres paramètres ne peuvent pas changer,
-         donc on n'a pas besoin de le réinitialiser
-        """
-
-        self.historique = np.array([[*self.pos0, *self.vit0]])  # on oublie les pas calculés
+        self.historique = np.array([[*(self.pos0.unpack()), *(self.vit0.unpack())]])  # on oublie les pas calculés
         self.etat = "actif"  # Réinitialiser l'état à actif
         self.cible = None  # Réinitialiser la cible à None
 
@@ -234,22 +240,14 @@ class Projectile(Astre):
         """
         Ajoute un nouvel état du projectile à l'historique.
             Args:
-                position (list): Position actuelle du projectile [x, y].
-                vitesse (list): Vitesse actuelle du projectile [vx, vy].
+                pos (Vecteur2): Position actuelle du projectile.
+                vit (Vecteur2): Vitesse actuelle du projectile.
             """
 
-        nouvelle_ligne = np.array([[*pos, *vit]])  # Créer une nouvelle ligne avec la position et la vitesse
+        nouvelle_ligne = np.array([[pos.x, pos.y, vit.x, vit.y]])  # Créer une nouvelle ligne avec la position et la vitesse
         self.historique = np.vstack((self.historique, nouvelle_ligne))  # Ajouter la ligne à l'historique
 
-        """ 
-            est ce que je dois mettre à jour l'état du projectile en fonction de la durée de vie?
-            ou la simulation va gérer ça? je pense que c'est la simulation qui va gérer ça, 
-            donc je ne vais pas le faire ici:C’est la Simulation qui compare le temps actuel à t_apparition  + duree_vie, 
-            qui met etat = "expire" et qui arrête ensuite d’appeler ajouter_etat
-
-            """
-
-    def position(self, t):
+    def position(self, t: float):
         """
         Calcule la position du projectile à un instant donné t.
 
@@ -260,31 +258,86 @@ class Projectile(Astre):
             np.array: Position du projectile à l'instant t.
         """
         try:
-            return self.etat_a(t)[:2]  # Retourne seulement les coordonnées x et y de l'état complet à l'instant t
+            etat = self.etat_a(int(t))
+            return etat[0]  # Retourne seulement les coordonnées x et y de l'état complet à l'instant t
         except DebutHistorique as e:
             raise DebutHistorique(str(e))
         except FinHistorique as e:
             raise FinHistorique(str(e))
 
-    def etat_a(self, pas):
+    def etat_a(self, pas: int) -> tuple[Vecteur2, Vecteur2]:
         """
-        Retourne l'état complet du projectile à un pas donné de la simulation.
-
         Args:
-        pas (int): Pas de la simulation (1 pas = 1 journée).
+            pas (int): L'étape de la simulation pour laquelle on cherche l'état du projectile, en jours.
 
         Returns:
-        np.ndarray: [x, y, vx, vy]. Retourne l'état au pas demandé
-        Raises:
-            DebutHistorique: Si le pas est avant l'apparition du projectile.
-            FinHistorique: Si le pas dépasse les pas déjà calculés.
+            Le vecteur de position et le vecteur de vitesse au pas spécifié.
         """
         if pas < self.temps_apparition:
-            raise DebutHistorique("Le projectile n'a pas encore été créé")  # Retourne l'état initial avant l'apparition
+            raise DebutHistorique("Le projectile n'a pas encore été créé à ce temps.")
 
-        ligne = int(pas - self.temps_apparition)  # Nombre de pas depuis l'apparition
+        i_ligne = int(pas - self.temps_apparition)  # Nombre de pas depuis l'apparition
 
-        if ligne < len(self.historique):
-            return self.historique[ligne]  # Retourne ligne conplete
-        raise FinHistorique(
-            "Le projectile ne s'est pas rendu là")  # Retourne le dernier état connu si le pas dépasse les pas calculés
+        if i_ligne > self.temps_apparition:
+            raise DebutHistorique("Le projectile n'existe plus à ce temps.")
+
+        ligne = self.historique[i_ligne]
+
+        return Vecteur2(ligne[0], ligne[1]), Vecteur2(ligne[2], ligne[3])
+
+
+class Vecteur2:
+    """
+    Un vecteur 2-dimensionnel qui supporte l'addition (+), la soustraction (-), la multiplication par un scalaire (*)
+    et le produit scalaire (dotprod).
+    """
+    def __init__(self, x, y):
+        self.__x = x
+        self.__y = y
+
+    @property
+    def x(self):
+        return self.__x
+
+    @property
+    def y(self):
+        return self.__y
+
+    def norme2(self) -> float:
+        return float(self.__x * self.__x + self.__y * self.__y)
+
+    def norme(self) -> float:
+        return math.sqrt(self.norme2())
+
+    def __add__(self, other: Vecteur2) -> Vecteur2:
+        return Vecteur2(self.__x + other.__x, self.__y + other.__y)
+
+    def __neg__(self) -> Vecteur2:
+        return Vecteur2(-self.__x, -self.__y)
+
+    def __sub__(self, other: Vecteur2) -> Vecteur2:
+        return self + (-other)
+
+    def __mul__(self, other: float) -> Vecteur2:
+        return Vecteur2(other * self.__x, other * self.__y)
+
+    def __rmul__(self, other: float) -> Vecteur2:
+        return Vecteur2(other * self.__x, other * self.__y)
+
+    def unpack(self) -> tuple[float, float]:
+        return self.__x, self.__y
+
+    def dotprod(self, other: Vecteur2) -> float:
+        return self.__x * other.__x + self.__y * other.__y
+
+    @staticmethod
+    def nul() -> Vecteur2:
+        return Vecteur2(0, 0)
+
+    @staticmethod
+    def pack_t(arg: tuple[float, float]) -> Vecteur2:
+        return Vecteur2(arg[0], arg[1])
+
+    @staticmethod
+    def v_polaire(r: float, theta: float):
+        return Vecteur2(r * np.cos(theta), r * np.sin(theta))
