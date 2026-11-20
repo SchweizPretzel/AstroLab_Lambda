@@ -278,8 +278,8 @@ class Projectile(Astre):
 
         i_ligne = int(pas - self.temps_apparition)  # Nombre de pas depuis l'apparition
 
-        if i_ligne > self.temps_apparition:
-            raise DebutHistorique("Le projectile n'existe plus à ce temps.")
+        if i_ligne >= len(self.historique):
+            raise FinHistorique("Le projectile n'existe plus à ce temps.")
 
         ligne = self.historique[i_ligne]
 
