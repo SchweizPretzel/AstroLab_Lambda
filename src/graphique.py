@@ -506,7 +506,10 @@ class FenetreSimulateur(ctk.CTk):
 
         :param chemin: Chemin du fichier CSV
         """
-        self.simulateur.importer(chemin)
+        try:
+            self.simulateur.importer(chemin)
+        except (FileNotFoundError, PermissionError) as erreur:
+            messagebox.showerror("Le chargement a échoué !", str(erreur), parent=self)
         self.simulateur.recalculer()
         # os.path.basename garde seulement le nom du fichier : https://docs.python.org/3/library/os.path.html
         self.afficher(*self.simulateur.astres_et_projectiles, os.path.basename(chemin))
@@ -584,5 +587,5 @@ class FenetreSimulateur(ctk.CTk):
 # Aperçu de l'interface : « python -m src.graphique » depuis la racine du projet
 if __name__ == "__main__":
     fenetre = FenetreSimulateur()
-    fenetre.charger("donnees/systeme_solaire.csv")
+    fenetre.charger("../donnees/systeme_solaire.csv")
     fenetre.mainloop()
