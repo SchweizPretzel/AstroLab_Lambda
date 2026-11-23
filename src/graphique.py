@@ -76,13 +76,19 @@ class BarreHaut(ctk.CTkFrame):
     CTkFrame (cadre qui regroupe des widgets) : https://customtkinter.tomschimansky.com/documentation/widgets/frame
     """
 
-    def __init__(self, master, ouvrir=None, enregistrer=None, lancer=None, **kwargs):
+    def __init__(self, master, ouvrir=None, enregistrer=None, lancer=None, comparer=None, **kwargs):
         super().__init__(master, **kwargs)
         self.info = texte(self, "Aucun fichier")
-        ligne_de_widgets([bouton(self, "Ouvrir un CSV…", ouvrir),
-                          bouton(self, "Enregistrer…", enregistrer),
-                          bouton(self, "Lancer un projectile…", lancer),
-                          self.info])
+        self.widgets = []
+        self.widgets.append(bouton(self, "Ouvrir un CSV…", ouvrir))
+        if enregistrer: self.widgets.append(bouton(self, "Enregistrer…", enregistrer))
+        self.widgets.append(bouton(self, "Lancer un projectile…", lancer))
+        self.widgets.append(self.info)
+        ligne_de_widgets(self.widgets)
+
+        if comparer:
+            self.bouton_comparer = bouton(self, "Comparer", comparer, "#d34032")
+            self.bouton_comparer.grid(row=0, column=len(self.widgets)+1, padx=4, pady=8)
 
     def afficher_fichier(self, nom: str, nb_astres: int, nb_projectiles: int):
         # configure change une option d'un widget déjà créé, ici son texte.
@@ -402,10 +408,11 @@ class FormulaireProjectile(ctk.CTkToplevel):
               ("vx0", "vx (UA/j)", "0"), ("vy0", "vy (UA/j)", "0.014"), ("masse", "Masse (MT)", "0.001"),
               ("rayon", "Rayon (UA)", "0.000001"), ("duree_vie", "Durée de vie (jours)", "1000"))
 
-    def __init__(self, master, lancer):
+    def __init__(self, master, lancer, simulateur: Simulation):
         super().__init__(master)
         self.title("Lancer un projectile")
         self.lancer = lancer  # fonction qui reçoit le nom et les nombres, et renvoie un message d'erreur ou None
+        self.simulateur = simulateur
         self.entrees = {}
         for ligne, (cle, libelle, defaut) in enumerate(self.CHAMPS):
             texte(self, libelle).grid(row=ligne, column=0, padx=12, pady=3, sticky="w")
@@ -415,7 +422,7 @@ class FormulaireProjectile(ctk.CTkToplevel):
         self.erreur = ctk.CTkLabel(self, text="", text_color="#FF6B6B", wraplength=300)
         self.erreur.grid(row=len(self.CHAMPS), column=0, columnspan=2, padx=12)
         bouton(self, "Lancer", self.valider).grid(row=len(self.CHAMPS) + 1, column=0, columnspan=2, pady=10)
-        self.after(100, self.grab_set)  # garde clavier et souris sur le formulaire une fois affiché
+        self.grab_set()  # garde clavier et souris sur le formulaire une fois affiché
 
     def valider(self):
         """Vérifie les champs ; ferme la fenêtre si le projectile a été lancé, sinon affiche l'erreur."""
@@ -432,7 +439,7 @@ class FormulaireProjectile(ctk.CTkToplevel):
         elif nombres["duree_vie"] <= 0:
             erreur = "La durée de vie doit être strictement positive."
         else:
-            erreur = self.lancer(nom, nombres)
+            erreur = self.lancer(nom, nombres, self.simulateur)
         if erreur:
             self.erreur.configure(text=erreur)
         else:
@@ -452,8 +459,11 @@ class FenetreSimulateur(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.quit)  # NE PAS ENLEVER : ferme proprement la fenêtre
 
         self.simulateur = Simulation()
-        self.barre_haut = BarreHaut(self, ouvrir=self.ouvrir_csv, enregistrer=self.enregistrer_csv,
-                                    lancer=lambda: FormulaireProjectile(self, self.lancer_projectile))
+        self.barre_haut = BarreHaut(self,
+                                    ouvrir=self.ouvrir_csv,
+                                    enregistrer=self.enregistrer_csv,
+                                    lancer=lambda: FormulaireProjectile(self, self.lancer_projectile, self.simulateur),
+                                    comparer=lambda: FenetreComparatif(self))
         self.gestionnaire = GestionnaireObjets(self)
         self.vue = VueGraphique(self)
         self.details = DetailsProjectile(self, exporter=self.exporter_trajectoire)
@@ -591,6 +601,106 @@ class FenetreSimulateur(ctk.CTk):
             trajectoire.to_csv(chemin, index=False)
         except OSError as erreur:
             messagebox.showerror("L'export a échoué !", str(erreur), parent=self)
+
+
+class FenetreComparatif(ctk.CTkToplevel):
+    def __init__(self, master):
+        super().__init__(master=master)
+        self.barre_controle = BarreControle(master=self)
+        self.vue_gauche = VueGraphique(master=self)
+        self.vue_droite = VueGraphique(master=self)
+
+        self.simulateur_gauche = Simulation()
+        self.simulateur_droite = Simulation()
+
+        self.barre_haut_gauche = BarreHaut(
+            self,
+            ouvrir=lambda: self.ouvrir_csv(self.simulateur_gauche),
+            enregistrer=None,
+            lancer=lambda: FormulaireProjectile(self, self.lancer_projectile, self.simulateur_gauche),
+            comparer=None
+        )
+        self.barre_haut_droite = BarreHaut(
+            self,
+            ouvrir=lambda: self.ouvrir_csv(self.simulateur_droite),
+            enregistrer=None,
+            lancer=lambda: FormulaireProjectile(self, self.lancer_projectile, self.simulateur_droite),
+            comparer=None
+        )
+
+        self.barre_haut_gauche.grid(column=0, row=0, sticky="nse")
+        self.barre_haut_droite.grid(column=2, row=0, sticky="nsw")
+        self.vue_gauche.grid(column=0, row=1, sticky="nsew")
+        self.vue_droite.grid(column=2, row=1, sticky="nsew")
+        self.barre_controle.grid(row=2, column=0, columnspan=3, sticky="ew", padx=8, pady=4)
+
+        self.after(100, self.grab_set)
+
+        self.cache = {
+            "astres": [],
+            "projectiles": [],
+            "nom_fichier": "",
+            "t": 0.0
+        }
+
+    def afficher(self, t):
+        self.simulateur_gauche.recalculer()
+        self.simulateur_droite.recalculer()
+        self.vue_gauche.dessiner(*self.simulateur_gauche.astres_et_projectiles, t)
+        self.vue_gauche.dessiner(*self.simulateur_gauche.astres_et_projectiles, t)
+
+    def ouvrir_csv(self, simulateur: Simulation):
+        """Demande un fichier CSV et le charge dans la simulation."""
+        # askopenfilename renvoie le chemin choisi ("" si annulé)
+        # https://docs.python.org/3/library/dialog.html#tkinter.filedialog.askopenfilename
+        chemin = filedialog.askopenfilename(filetypes=[("Fichiers CSV", "*.csv")], parent=self)
+        if not chemin:
+            return
+        try:
+            self.charger(chemin, simulateur)
+        except (OSError, KeyError, ValueError) as erreur:  # OSError couvre FileNotFoundError et PermissionError
+            messagebox.showerror("Le chargement a échoué !", str(erreur), parent=self)
+
+    def charger(self, chemin: str, simulateur: Simulation):
+        """
+        Charge un CSV dans la simulation, calcule les trajectoires puis affiche le tout à t = 0.
+
+        :param chemin: Chemin du fichier CSV
+        :param simulateur: Simulateur sur lequel on souhaite opérer
+        """
+        try:
+            simulateur.importer(chemin)
+        except (FileNotFoundError, PermissionError) as erreur:
+            messagebox.showerror("Le chargement a échoué !", str(erreur), parent=self)
+        simulateur.recalculer()
+        # os.path.basename garde seulement le nom du fichier : https://docs.python.org/3/library/os.path.html
+        self.afficher(*simulateur.astres_et_projectiles, os.path.basename(chemin))
+        self.barre_controle.t = 0
+
+
+    def lancer_projectile(self, nom: str, n: dict, simulateur: Simulation):
+        """
+        Lance au temps actuel le projectile saisi dans le formulaire, avec une couleur choisie automatiquement.
+
+        :param nom: Nom du projectile
+        :param n: Nombres saisis (x0, y0, vx0, vy0, masse, rayon, duree_vie)
+        :return: Un message d'erreur, ou None si le projectile a été lancé
+        """
+        if not simulateur.astres:
+            return "Ouvrez d'abord un CSV qui contient des astres."
+        objets = simulateur.astres + simulateur.projectiles
+        if nom in [objet.nom for objet in objets]:
+            return f"Le nom « {nom} » est déjà utilisé."
+        couleur = couleur_aleatoire({objet.couleur for objet in objets})  # différente des couleurs déjà prises
+        try:
+            projectile = Projectile(nom, n["masse"], couleur, 0.5, n["rayon"], Vecteur2(n["x0"], n["y0"]), Vecteur2(n["vx0"], n["vy0"]),
+                                    self.barre_controle.t, n["duree_vie"])
+        except ValueError as erreur:  # masse ou rayon négatifs
+            return str(erreur)
+        simulateur.projectiles.append(projectile)
+        simulateur.recalculer()
+        self.afficher(*simulateur.astres_et_projectiles, self.cache["nom_fichier"], self.barre_controle.t)
+        return None
 
 
 # Aperçu de l'interface : « python -m src.graphique » depuis la racine du projet
