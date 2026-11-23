@@ -180,26 +180,35 @@ class VueGraphique(ctk.CTkFrame):
 
         self.dessiner()
 
-    def dessiner(self, astres=(), projectiles=(), t: float = 0.0):
+    def reset_lims(self, limite: float):
+        self.ax.set(xlim=(-limite, limite), ylim=(-limite, limite))
+
+    def dessiner(self, astres=(), projectiles=(), t: float = 0.0, reinit=True):
         """
         Dessine au temps t les orbites et les objets actifs avec leur nom.
 
         :param astres: Les AstreFixe à afficher
         :param projectiles: Les Projectiles à afficher
         :param t: Le moment auquel on souhaite illustrer le tout.
+        :param reinit: Si les limites du graphique devraient êtres réinitialisées ou non.
         """
 
         ax = self.ax
+        prev_xlim = ax.get_xlim()
+        prev_ylim = ax.get_ylim()
         ax.clear()
 
         actifs = [objet for objet in list(astres) + list(projectiles) if objet.actif]
 
         # Vue carrée qui contient l'astre le plus loin (+10 %)
         limite = 1.1 * max([objet.position(t).norme() for objet in actifs if isinstance(objet, AstreFixe)] + [1])
+        if reinit:
+            self.reset_lims(limite)
+        else:
+            ax.set(xlim=prev_xlim, ylim=prev_ylim)
 
         # Axes.set : https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.set.html
-        ax.set(xlim=(-limite, limite), ylim=(-limite, limite), aspect="equal", facecolor=FOND,
-               title=f"t = {t} jours", xlabel="x (UA)", ylabel="y (UA)")
+        ax.set(aspect="equal", facecolor=FOND, title=f"t = {t} jours", xlabel="x (UA)", ylabel="y (UA)")
 
         # Texte en gris clair, sinon il est noir sur le fond bleu nuit
         # tick_params : https://matplotlib.org/stable/api/_as_gen/matplotlib.axes.Axes.tick_params.html
@@ -335,7 +344,7 @@ class BarreControle(ctk.CTkFrame):
     def t(self, value):
         self.__t = max(0, min(value, int(self.master.simulateur.temps_max())))  # Garder t entre 0 et temps_max
         self.afficher_temps(self.__t)
-        self.master.vue.dessiner(*self.master.simulateur.astres_et_projectiles, self.t)
+        self.master.vue.dessiner(*self.master.simulateur.astres_et_projectiles, self.t, reinit=False)
 
     # Commandes des boutons
     def __commande_reinitialiser(self):
