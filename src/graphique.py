@@ -313,9 +313,15 @@ class BarreControle(ctk.CTkFrame):
     Barre du bas : réinitialiser, reculer, jouer, arrêter, avancer, le pas dt et le temps actuel.
     """
 
-    def __init__(self, master):
+    def __init__(self, master, simulateurs: tuple = ()):
         super().__init__(master)
-        self.master: FenetreSimulateur
+        self.master: FenetreSimulateur | FenetreComparatif
+
+        # Détecte si la ligne du temps est rattachée à une fenêtre de comparatif
+        if isinstance(self.master, FenetreComparatif):
+            self.comparatif = True
+        else:
+            self.comparatif = False
 
         # CTkEntry (case où l'on écrit) : https://customtkinter.tomschimansky.com/documentation/widgets/entry
         self.pas_temps = ctk.CTkEntry(self, width=60)
@@ -342,22 +348,41 @@ class BarreControle(ctk.CTkFrame):
     def afficher_temps(self, t: int):
         self.temps.configure(text=f"t = {t} jours")
 
+    def temps_max(self):
+        if self.comparatif:
+            return max(int(self.master.simulateur_gauche.temps_max()), int(self.master.simulateur_droite.temps_max()))
+        else:
+            return int(self.master.simulateur.temps_max())
+
     @property
     def t(self):
         return self.__t
 
     @t.setter
     def t(self, value):
-        self.__t = max(0, min(value, int(self.master.simulateur.temps_max())))  # Garder t entre 0 et temps_max
-        self.afficher_temps(self.__t)
-        self.master.vue.dessiner(*self.master.simulateur.astres_et_projectiles, self.t, reinit=False)
+        # Garder t entre 0 et temps_max
+        self.__t = max(0, min(value, int(self.temps_max())))
+
+        if self.comparatif:
+            # Mettre à jour l'affichage
+            self.afficher_temps(self.__t)
+            self.master.vue_gauche.dessiner(*self.master.simulateur_gauche.astres_et_projectiles, self.t, reinit=False)
+            self.master.vue_droite.dessiner(*self.master.simulateur_droite.astres_et_projectiles, self.t, reinit=False)
+        else:
+            # Mettre à jour l'affichage
+            self.afficher_temps(self.__t)
+            self.master.vue.dessiner(*self.master.simulateur.astres_et_projectiles, self.t, reinit=False)
 
     # Commandes des boutons
     def __commande_reinitialiser(self):
         """Réinitialise le temps et force le graphique à se recalculer."""
-        self.master.simulateur.recalculer()
-        self.master.afficher(avec_cache=True)
         self.__commande_arreter()
+        if self.comparatif:
+            self.master.simulateur_gauche.recalculer()
+            self.master.simulateur_droite.recalculer()
+        else:
+            self.master.simulateur.recalculer()
+        self.master.afficher(avec_cache=True)
 
     def __commande_arreter(self):
         """Arrête le défilement du temps et revient à t=0."""
@@ -366,7 +391,7 @@ class BarreControle(ctk.CTkFrame):
 
     def __commande_lecture(self):
         """Fait défiler le temps."""
-        if not self.defil and self.t < self.master.simulateur.temps_max():
+        if not self.defil and self.t < self.temps_max():
             self.defil = True
             self.mise_a_jour_lecture()
             self.boutons["jouer"].configure(text="⏸ Pause", command=self.__commande_pause)
@@ -388,7 +413,7 @@ class BarreControle(ctk.CTkFrame):
 
     def mise_a_jour_lecture(self):
         """Met à jour le temps à chaque 0.1 seconde"""
-        if self.defil and self.t < self.master.simulateur.temps_max():
+        if self.defil and self.t < self.temps_max():
             self.after(100, self.mise_a_jour_lecture)  # programmé avant de dessiner : l'attente et le dessin se chevauchent
             self.t += int(self.pas_temps.get())
         else:
@@ -615,24 +640,28 @@ class FenetreComparatif(ctk.CTkToplevel):
 
         self.barre_haut_gauche = BarreHaut(
             self,
-            ouvrir=lambda: self.ouvrir_csv(self.simulateur_gauche),
+            ouvrir=lambda: self.ouvrir_csv("gauche"),
             enregistrer=None,
             lancer=lambda: FormulaireProjectile(self, self.lancer_projectile, self.simulateur_gauche),
             comparer=None
         )
         self.barre_haut_droite = BarreHaut(
             self,
-            ouvrir=lambda: self.ouvrir_csv(self.simulateur_droite),
+            ouvrir=lambda: self.ouvrir_csv("droite"),
             enregistrer=None,
             lancer=lambda: FormulaireProjectile(self, self.lancer_projectile, self.simulateur_droite),
             comparer=None
         )
 
-        self.barre_haut_gauche.grid(column=0, row=0, sticky="nse")
-        self.barre_haut_droite.grid(column=2, row=0, sticky="nsw")
+        self.barre_haut_gauche.grid(column=0, row=0, sticky="nsew")
+        self.barre_haut_droite.grid(column=2, row=0, sticky="nsew")
         self.vue_gauche.grid(column=0, row=1, sticky="nsew")
         self.vue_droite.grid(column=2, row=1, sticky="nsew")
-        self.barre_controle.grid(row=2, column=0, columnspan=3, sticky="ew", padx=8, pady=4)
+        self.barre_controle.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=8, pady=4)
+
+        # weight=1 : la ligne 1 aux colonnes 0 et 2 (les graphiques) grandissent avec la fenêtre
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure([0,2], weight=1)
 
         self.after(100, self.grab_set)
 
@@ -643,13 +672,46 @@ class FenetreComparatif(ctk.CTkToplevel):
             "t": 0.0
         }
 
-    def afficher(self, t):
-        self.simulateur_gauche.recalculer()
-        self.simulateur_droite.recalculer()
-        self.vue_gauche.dessiner(*self.simulateur_gauche.astres_et_projectiles, t)
-        self.vue_gauche.dessiner(*self.simulateur_gauche.astres_et_projectiles, t)
+    def afficher(self, astres_gauche=(), projectiles_gauche=(), nom_fichier_gauche="Aucun Fichier",
+                 astres_droite=(), projectiles_droite=(), nom_fichier_droite="Aucun Fichier",
+                 t=0, avec_cache=False):
+        if avec_cache:
+            self.afficher(
+                astres_gauche=self.cache["astres_gauche"],
+                projectiles_gauche=self.cache["projectiles_gauche"],
+                nom_fichier_gauche=self.cache["nom_fichier_gauche"],
 
-    def ouvrir_csv(self, simulateur: Simulation):
+                astres_droite=self.cache["astres_gauche"],
+                projectiles_droite=self.cache["projectiles_droite"],
+                nom_fichier_droite=self.cache["nom_fichier_droite"],
+
+                t=self.cache["t"])
+        else:
+            self.afficher_gauche(astres_gauche, projectiles_gauche, nom_fichier_gauche, t)
+            self.afficher_droite(astres_droite, projectiles_droite, nom_fichier_droite, t)
+            self.barre_controle.afficher_temps(int(t))
+
+    def afficher_gauche(self, astres=(), projectiles=(), nom_fichier="Aucun Fichier", t=0, avec_cache=False):
+        self.barre_haut_gauche.afficher_fichier(nom_fichier, len(astres), len(projectiles))
+        self.vue_gauche.dessiner(astres, projectiles, t)
+
+        # Cache
+        self.cache["astres_gauche"] = astres
+        self.cache["projectiles_gauche"] = projectiles
+        self.cache["nom_fichier_gauche"] = nom_fichier
+        self.cache["t"] = t
+
+    def afficher_droite(self, astres=(), projectiles=(), nom_fichier="Aucun Fichier", t=0, avec_cache=False):
+        self.barre_haut_droite.afficher_fichier(nom_fichier, len(astres), len(projectiles))
+        self.vue_droite.dessiner(astres, projectiles, t)
+
+        # Cache
+        self.cache["astres_droite"] = astres
+        self.cache["projectiles_droite"] = projectiles
+        self.cache["nom_fichier_droite"] = nom_fichier
+        self.cache["t"] = t
+
+    def ouvrir_csv(self, cote: str):
         """Demande un fichier CSV et le charge dans la simulation."""
         # askopenfilename renvoie le chemin choisi ("" si annulé)
         # https://docs.python.org/3/library/dialog.html#tkinter.filedialog.askopenfilename
@@ -657,26 +719,33 @@ class FenetreComparatif(ctk.CTkToplevel):
         if not chemin:
             return
         try:
-            self.charger(chemin, simulateur)
+            self.charger(chemin, cote)
         except (OSError, KeyError, ValueError) as erreur:  # OSError couvre FileNotFoundError et PermissionError
             messagebox.showerror("Le chargement a échoué !", str(erreur), parent=self)
 
-    def charger(self, chemin: str, simulateur: Simulation):
+    def charger(self, chemin: str, cote: str):
         """
         Charge un CSV dans la simulation, calcule les trajectoires puis affiche le tout à t = 0.
 
         :param chemin: Chemin du fichier CSV
-        :param simulateur: Simulateur sur lequel on souhaite opérer
+        :param cote: Simulateur sur lequel on souhaite opérer
         """
+        if cote == "gauche":
+            simulateur = self.simulateur_gauche
+        else:
+            simulateur = self.simulateur_droite
+
         try:
             simulateur.importer(chemin)
         except (FileNotFoundError, PermissionError) as erreur:
             messagebox.showerror("Le chargement a échoué !", str(erreur), parent=self)
         simulateur.recalculer()
         # os.path.basename garde seulement le nom du fichier : https://docs.python.org/3/library/os.path.html
-        self.afficher(*simulateur.astres_et_projectiles, os.path.basename(chemin))
+        if cote == "gauche":
+            self.afficher_gauche(*self.simulateur_gauche.astres_et_projectiles, os.path.basename(chemin))
+        else:
+            self.afficher_droite(*self.simulateur_droite.astres_et_projectiles, os.path.basename(chemin))
         self.barre_controle.t = 0
-
 
     def lancer_projectile(self, nom: str, n: dict, simulateur: Simulation):
         """
@@ -684,6 +753,7 @@ class FenetreComparatif(ctk.CTkToplevel):
 
         :param nom: Nom du projectile
         :param n: Nombres saisis (x0, y0, vx0, vy0, masse, rayon, duree_vie)
+        :param simulateur: le simulateur auquel on souhaite ajouter le projectile.
         :return: Un message d'erreur, ou None si le projectile a été lancé
         """
         if not simulateur.astres:

@@ -9,7 +9,7 @@ class Simulation:
     def __init__(self):
         self.astres: list[AstreFixe] = []
         self.projectiles: list[Projectile] = []
-        self.dt = 0.1
+        self.dt = 0.2
 
     @property
     def astres_et_projectiles(self):

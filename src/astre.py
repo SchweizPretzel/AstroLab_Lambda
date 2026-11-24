@@ -161,7 +161,7 @@ class AstreFixe(Astre):
         else:
             v_parent = self.parent.vitesse()
 
-        if self.periode > 0:
+        if self.distance > 1e-12:
             return v_parent + Vecteur2.v_polaire(2 * np.pi * self.distance, theta)
         else:
             return Vecteur2.nul()
