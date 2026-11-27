@@ -8,7 +8,7 @@ Documentation officielle :
 """
 from abc import ABC, abstractmethod
 
-import math
+from math import sqrt, cos, sin
 import numpy as np
 
 from src.exceptions import DebutHistorique, FinHistorique
@@ -307,7 +307,7 @@ class Vecteur2:
         return float(self.__x * self.__x + self.__y * self.__y)
 
     def norme(self) -> float:
-        return math.sqrt(self.norme2())
+        return sqrt(self.norme2())
 
     def __add__(self, other: Vecteur2) -> Vecteur2:
         return Vecteur2(self.__x + other.__x, self.__y + other.__y)
@@ -341,3 +341,69 @@ class Vecteur2:
     @staticmethod
     def v_polaire(r: float, theta: float):
         return Vecteur2(r * np.cos(theta), r * np.sin(theta))
+
+
+class Vecteur3:
+    """
+    Un vecteur 3-dimensionnel qui supporte l'addition (+), la soustraction (-), la multiplication par un scalaire (*),
+    le produit scalaire (dotprod) et le produit vectoriel (crossprod).
+    """
+    def __init__(self, x, y, z):
+        self.__x = x
+        self.__y = y
+        self.__z = z
+
+    @property
+    def x(self):
+        return self.__x
+
+    @property
+    def y(self):
+        return self.__y
+
+    @property
+    def z(self):
+        return self.__z
+
+    def norme2(self) -> float:
+        return float(self.__x * self.__x + self.__y * self.__y + self.__z * self.__z)
+
+    def norme(self) -> float:
+        return sqrt(self.norme2())
+
+    def __add__(self, other: Vecteur3) -> Vecteur3:
+        return Vecteur3(self.__x + other.__x, self.__y + other.__y, self.__z + other.__z)
+
+    def __neg__(self) -> Vecteur3:
+        return Vecteur3(-self.__x, -self.__y, -self.__z)
+
+    def __sub__(self, other: Vecteur3) -> Vecteur3:
+        return self + (-other)
+
+    def __mul__(self, other: float) -> Vecteur3:
+        return Vecteur3(other * self.__x, other * self.__y, other * self.__z)
+
+    def __rmul__(self, other: float) -> Vecteur3:
+        return Vecteur3(other * self.__x, other * self.__y, other * self.__z)
+
+    def unpack(self) -> tuple[float, float, float]:
+        return self.__x, self.__y, self.__z
+
+    def dotprod(self, other: Vecteur3) -> float:
+        return self.__x * other.__x + self.__y * other.__y + self.__z + other.__z
+
+    @staticmethod
+    def nul() -> Vecteur3:
+        return Vecteur3(0, 0, 0)
+
+    @staticmethod
+    def pack_t(arg: tuple[float, float, float]) -> Vecteur3:
+        return Vecteur3(arg[0], arg[1], arg[2])
+
+    @staticmethod
+    def v_cyl(r: float, theta: float, h: float):
+        return Vecteur2(r * np.cos(theta), r * np.sin(theta), h)
+
+    @staticmethod
+    def v_polaire(r: float, theta: float, phi: float):
+        return Vecteur3(r * cos(theta) * cos(phi), r * sin(theta) * cos(phi), r * sin(phi))
